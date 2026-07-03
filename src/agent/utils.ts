@@ -3,7 +3,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { OPEN_WIKI_DIR, UPDATE_METADATA_PATH } from "../constants.js";
+import {
+  OPEN_WIKI_DIR,
+  PROJECT_SKILL_PATH,
+  UPDATE_METADATA_PATH,
+} from "../constants.js";
 import type { OpenWikiCommand, RunContext, UpdateMetadata } from "./types.js";
 import type { Dirent } from "node:fs";
 
@@ -31,6 +35,30 @@ export async function createRunContext(
     lastUpdate,
     gitSummary: await createGitSummary(command, cwd, lastUpdate),
   };
+}
+
+/**
+ * Reads the repo-authored project skill file, if present. This is not
+ * OpenWiki-generated content — it's how a repository customizes OpenWiki's
+ * own behavior for that specific project (conventions, focus areas, things
+ * to avoid) without forking OpenWiki itself. Returns null if the file is
+ * missing or empty.
+ */
+export async function readProjectSkill(cwd: string): Promise<string | null> {
+  const skillFile = path.join(cwd, PROJECT_SKILL_PATH);
+
+  try {
+    const content = await readFile(skillFile, "utf8");
+    const trimmed = content.trim();
+
+    return trimmed.length > 0 ? trimmed : null;
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 /**
@@ -134,7 +162,10 @@ async function addDirectoryToSnapshot(
     const entryPath = path.join(directory, entry.name);
     const relativePath = path.join(relativeDirectory, entry.name);
 
-    if (relativePath === path.basename(UPDATE_METADATA_PATH)) {
+    if (
+      relativePath === path.basename(UPDATE_METADATA_PATH) ||
+      relativePath === path.basename(PROJECT_SKILL_PATH)
+    ) {
       continue;
     }
 
