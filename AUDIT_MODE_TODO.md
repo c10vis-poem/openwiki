@@ -24,7 +24,32 @@ read-only cop.
 - Each finding: doc file + location, the claim, why it's stale (source/git evidence), confidence.
 - Zero findings = exit clean with "docs appear consistent with source."
 - It must NOT edit any file. Not docs, not AGENTS.md/CLAUDE.md, nothing.
-- Reuse the SKILL.md mechanism — `readProjectSkill()` already loaded per run; audit should honor project-specific instructions too.
+- Reuse the SKILL.md mechanism — `readProjectSkill()` already loaded per run; audit should honor project-specific instructions too. The SKILL.md / "memory as a skill" layer stays a focal persistence layer; audit must never flag or undo it as "inconsistent."
+
+## CRITICAL — do not erase parallel progress. "Doesn't line up" ≠ "false."
+The single most important rule, and why audit is report-only.
+
+A doc claim that doesn't match current source is NOT automatically stale.
+It is very often the opposite: a NEW feature/edit that landed in a parallel
+session, which the code being inspected predates or hasn't caught up to.
+Multiple sessions work this repo family concurrently. Undoing a "mismatch"
+can erase real, newer work.
+
+Before flagging anything stale/false, audit MUST reason chronologically
+from git evidence:
+- If the doc claim lines up chronologically with (or is newer than) the
+  most recent relevant commits, treat it as a LIKELY NEW ADDITION — report
+  "newer than inspection baseline, probably a recent addition; confirm, do
+  NOT assume false." Neutral confidence, never "delete this."
+- Only escalate to "likely stale" when git shows source actively moved PAST
+  the claim (thing removed/renamed/contradicted by a commit LATER than the
+  doc).
+- When you can't tell stale-vs-unseen-new, say exactly that and defer to the
+  operator. Never present an ambiguous mismatch as a confirmed error.
+- Audit reports; it does not judge or undo. A human (or an operator-
+  authorized update run) decides.
+
+Bake this into the audit prompt instructions themselves, not just here.
 
 ## Prompt content to write (audit mode instructions)
 Model the discipline sections on the existing `update` instructions in `prompt.ts` but invert the intent: the update prompt says "edit only what's stale." Audit says "find what's stale and report it, edit nothing." Steal the git-diff discipline (diff since `.last-update.json` gitHead) — that's exactly how you find what drifted.
