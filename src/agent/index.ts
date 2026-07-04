@@ -36,6 +36,7 @@ import {
 import {
   createOpenWikiContentSnapshot,
   createRunContext,
+  readProjectSkill,
   writeLastUpdateMetadata,
 } from "./utils.js";
 
@@ -159,6 +160,11 @@ async function runOpenWikiAgentCore(
 ): Promise<OpenWikiRunResult> {
   const context = await createRunContext(command, cwd);
   emitDebug(options, "context=created");
+  const projectSkill = await readProjectSkill(cwd);
+  emitDebug(
+    options,
+    `projectSkill=${projectSkill ? `loaded(length=${projectSkill.length})` : "not-found"}`,
+  );
   const openWikiSnapshotBefore =
     command === "chat" ? null : await createOpenWikiContentSnapshot(cwd);
   emitDebug(options, "openwiki.snapshot=created");
@@ -187,7 +193,7 @@ async function runOpenWikiAgentCore(
       timeout: 120,
       virtualMode: true,
     }),
-    systemPrompt: createSystemPrompt(command),
+    systemPrompt: createSystemPrompt(command, projectSkill),
   });
   emitDebug(options, "agent=created");
 

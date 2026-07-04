@@ -73,3 +73,16 @@ These configuration options and secrets will be saved to `~/.openwiki/.env` on y
 OpenWiki supports OpenRouter, Fireworks, Baseten, OpenAI and Anthropic out of the box. By default, there are a few models pre-defined (GLM 5.2, Kimi K2.6, Sonnet 5, etc) but for each inference provider, OpenWiki will allow you to specify your own custom model ID.
 
 If there's an inference provider or model you'd like to see added, please open a PR!
+
+### Project skill file
+
+Drop an `openwiki/SKILL.md` file in your repository to customize how OpenWiki behaves for that specific project — conventions, terminology, areas to focus on or avoid, anything you'd want a documentation writer joining the project to know upfront. OpenWiki reads it on every run (chat, `--init`, and `--update`) and follows it in addition to its built-in instructions.
+
+```md
+# openwiki/SKILL.md
+
+Always refer to the database layer as "the vault", never "the DB".
+Skip documenting anything under legacy/ — that code is being deleted.
+```
+
+This file is optional. Repositories without one see no change in behavior. It does not override OpenWiki's security rules (it can't get OpenWiki to read secrets, `.env` files, or write outside `openwiki/`) or the restriction on which top-level files it may edit.

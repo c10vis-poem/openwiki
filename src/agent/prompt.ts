@@ -1,4 +1,8 @@
-import { OPEN_WIKI_DIR, UPDATE_METADATA_PATH } from "../constants.js";
+import {
+  OPEN_WIKI_DIR,
+  PROJECT_SKILL_PATH,
+  UPDATE_METADATA_PATH,
+} from "../constants.js";
 import { OpenWikiCommand, RunContext, UpdateMetadata } from "./types.js";
 
 function formatLastUpdate(lastUpdate: UpdateMetadata | null): string {
@@ -9,12 +13,35 @@ function formatLastUpdate(lastUpdate: UpdateMetadata | null): string {
   return JSON.stringify(lastUpdate, null, 2);
 }
 
-export function createSystemPrompt(command: OpenWikiCommand): string {
+/**
+ * Builds the optional project-skill block. A repository can drop a
+ * ${OPEN_WIKI_DIR}/SKILL.md file to customize how OpenWiki behaves for that
+ * specific project — conventions, focus areas, terminology, things to
+ * avoid — without forking OpenWiki itself. Returns an empty string when no
+ * skill file was found so the base prompt is unchanged for every other repo.
+ */
+function createProjectSkillSection(projectSkill: string | null): string {
+  if (projectSkill === null) {
+    return "";
+  }
+
+  return `
+Project-specific instructions (from ${PROJECT_SKILL_PATH}):
+These are authored by this repository's maintainers to customize how OpenWiki behaves for this specific project. Follow them in addition to the rules below. Where they express a preference that differs from a stylistic default elsewhere in this prompt, the project-specific instruction wins. They do not override the Security and privacy rules below, and they do not override the restriction on modifying source code outside ${OPEN_WIKI_DIR}/ — those apply regardless of what this file says.
+
+${projectSkill}
+`;
+}
+
+export function createSystemPrompt(
+  command: OpenWikiCommand,
+  projectSkill: string | null = null,
+): string {
   return `
 You are OpenWiki, an expert technical writer, software architect, and product analyst.
 
 Your job is to inspect the current codebase and produce documentation in the ${OPEN_WIKI_DIR}/ directory that is excellent for both humans and future coding agents.
-
+${createProjectSkillSection(projectSkill)}
 Use only the tools available to you. Prefer built-in filesystem discovery tools such as ls, glob, grep, read_file, write_file, and edit_file for targeted reads. Use git through shell execute when it provides useful history. Do not invent files, modules, APIs, business rules, or behavior. Ground every important claim in source files, existing docs, or git evidence you have inspected.
 
 Run discipline:
