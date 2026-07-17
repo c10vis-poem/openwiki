@@ -20,6 +20,7 @@ import {
   speakText,
   startRecording,
   stopAndTranscribe,
+  voiceDiagnostics,
 } from "./voice.js";
 import {
   getCredentialDiagnostics,
@@ -1494,8 +1495,25 @@ function ChatInput({
     if (option.id === "help") {
       resetInput();
       setNotice(
-        "Slash commands: /provider, /model, /init, /update, /clear, /help, /exit. Use arrows to select.",
+        "Slash commands: /provider, /model, /init, /update, /clear, /voice, /help, /exit. Use arrows to select.",
       );
+      return;
+    }
+
+    if (option.id === "voice") {
+      resetInput();
+      if (voiceEnabled) {
+        setNotice(
+          "Voice: ready. Ctrl+R to record, ENTER to transcribe. AESOP_TTS=0 to mute responses.",
+        );
+      } else {
+        const issues = voiceDiagnostics();
+        if (issues.length === 0) {
+          setNotice("Voice: not available (not a Termux environment).");
+        } else {
+          setError(`Voice setup incomplete: ${issues.join(" | ")}`);
+        }
+      }
       return;
     }
 
@@ -1674,7 +1692,8 @@ type SlashCommandId =
   | "init"
   | "model"
   | "provider"
-  | "update";
+  | "update"
+  | "voice";
 
 type SlashCommandOption = {
   description: string;
@@ -1728,6 +1747,11 @@ const slashCommandOptions: SlashCommandOption[] = [
     description: "Exit OpenWiki",
     id: "exit",
     label: "/exit",
+  },
+  {
+    description: "Voice setup status and diagnostics",
+    id: "voice",
+    label: "/voice",
   },
 ];
 

@@ -128,3 +128,38 @@ export function cancelRecording(): void {
   }
   try { spawn("termux-microphone-record", ["-q"], { stdio: "ignore" }); } catch {}
 }
+
+export function voiceDiagnostics(): string[] {
+  const issues: string[] = [];
+  const isTermux = fs.existsSync("/data/data/com.termux/files/usr/bin/bash");
+  if (!isTermux) {
+    issues.push("Not running in Termux");
+    return issues;
+  }
+  if (!fs.existsSync("/data/data/com.termux/files/usr/bin/termux-microphone-record")) {
+    issues.push("Missing: pkg install termux-api");
+  }
+  if (!fs.existsSync("/data/data/com.termux/files/usr/bin/ffmpeg")) {
+    issues.push("Missing: pkg install ffmpeg");
+  }
+  if (!fs.existsSync("/data/data/com.termux/files/usr/bin/proot-distro")) {
+    issues.push("Missing: pkg install proot-distro");
+  }
+  if (!findAesopDir()) {
+    issues.push("Missing: AESOP scripts (clone aesop repo to ~/aesop)");
+  }
+  const modelsDir = path.join(HOME, "models");
+  if (!fs.existsSync(path.join(modelsDir, "silero_vad.onnx"))) {
+    issues.push("Missing: Silero VAD model");
+  }
+  if (!fs.existsSync(path.join(modelsDir, "sherpa-onnx-moonshine-base-en-int8/encode.int8.onnx"))) {
+    issues.push("Missing: Moonshine STT model");
+  }
+  if (!fs.existsSync(path.join(modelsDir, "kokoro-multi-lang-v1.0/model.onnx"))) {
+    issues.push("Missing: Kokoro TTS model");
+  }
+  if (issues.length > 0) {
+    issues.push("Run: bash ~/aesop/deploy/phone/setup-voice.sh");
+  }
+  return issues;
+}
