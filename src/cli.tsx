@@ -20,6 +20,7 @@ import {
   speakText,
   startRecording,
   stopAndTranscribe,
+  stopSpeaking,
   voiceDiagnostics,
 } from "./voice.js";
 import {
@@ -1282,6 +1283,12 @@ function ChatInput({
       return;
     }
 
+    if (voiceEnabled && key.ctrl && inputValue === "s") {
+      stopSpeaking();
+      setNotice("Speech stopped.");
+      return;
+    }
+
     if (voiceEnabled && key.ctrl && inputValue === "r") {
       if (voiceState === "idle") {
         setVoiceState("recording");
@@ -1654,7 +1661,7 @@ function ChatInput({
       ) : (
         <Text>
           <Text color="gray">
-            enter to send - / for commands{voiceEnabled ? " - ctrl+r for voice" : ""} - /exit to quit - cwd{" "}
+            enter to send - / for commands{voiceEnabled ? " - ctrl+r voice - ctrl+s stop" : ""} - /exit to quit - cwd{" "}
             {formatCwd(process.cwd())}
           </Text>
         </Text>

@@ -96,11 +96,31 @@ export async function stopAndTranscribe(): Promise<string> {
   }
 }
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`]+`/g, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\n{2,}/g, ". ")
+    .trim();
+}
+
+export function stopSpeaking(): void {
+  try { spawn("termux-media-player", ["stop"], { stdio: "ignore" }); } catch {}
+}
+
 export async function speakText(text: string): Promise<void> {
   if (!text || text.length === 0) return;
 
   const ttsScript = path.join(getAesopDir(), "deploy/phone/tts_speak.py");
-  const truncated = text.slice(0, 500);
+  const truncated = stripMarkdown(text).slice(0, 500);
   const voiceSid = process.env.AESOP_VOICE ?? "0";
 
   try { fs.unlinkSync(TTS_OUT); } catch {}
