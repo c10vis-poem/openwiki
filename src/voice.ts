@@ -107,7 +107,7 @@ export async function speakText(text: string): Promise<void> {
 
   try {
     await execAsync(
-      `AESOP_VOICE=${voiceSid} proot-distro login debian --bind "${HOME}:${HOME}" -- python3 "${ttsScript}" "${TTS_OUT}" ${escapeShellArg(truncated)}`,
+      `proot-distro login debian --bind "${HOME}:${HOME}" -- python3 "${ttsScript}" "${TTS_OUT}" --sid ${voiceSid} ${escapeShellArg(truncated)}`,
       { timeout: 120000 },
     );
   } catch {
