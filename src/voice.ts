@@ -14,6 +14,7 @@ function findAesopDir(): string | null {
   const candidates = [
     path.join(HOME, "aesop"),
     path.join(HOME, "Aesop"),
+    path.join(HOME, "repos/aesop"),
     path.join(HOME, "storage/shared/aesop"),
   ];
   for (const d of candidates) {
