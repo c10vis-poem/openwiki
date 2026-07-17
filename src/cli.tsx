@@ -15,6 +15,13 @@ import {
   type InitSetupResult,
 } from "./credentials.js";
 import {
+  cancelRecording,
+  isVoiceAvailable,
+  speakText,
+  startRecording,
+  stopAndTranscribe,
+} from "./voice.js";
+import {
   getCredentialDiagnostics,
   loadOpenWikiEnv,
   saveOpenWikiEnv,
@@ -340,6 +347,17 @@ function App({ command }: AppProps) {
           },
         ]);
         nextCompletedRunId.current += 1;
+
+        if (isVoiceAvailable() && process.env.AESOP_TTS !== "0") {
+          const responseText = activeRunLog.current
+            .filter((item) => item.type === "text")
+            .map((item) => item.content)
+            .join("")
+            .trim();
+          if (responseText.length > 0) {
+            void speakText(responseText);
+          }
+        }
       })
       .catch((error: unknown) => {
         if (!mountedRef.current || activeRunId.current !== runId) {
@@ -1240,6 +1258,10 @@ function ChatInput({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [voiceState, setVoiceState] = useState<
+    "idle" | "recording" | "transcribing"
+  >("idle");
+  const voiceEnabled = isVoiceAvailable();
   const input = inputState.value;
   const cursorPosition = inputState.cursorPosition;
 
@@ -1256,6 +1278,44 @@ function ChatInput({
 
   useInput((inputValue, key) => {
     if (isSaving) {
+      return;
+    }
+
+    if (voiceEnabled && key.ctrl && inputValue === "r") {
+      if (voiceState === "idle") {
+        setVoiceState("recording");
+        setNotice("Recording... press ENTER to stop and transcribe.");
+        startRecording();
+      }
+      return;
+    }
+
+    if (voiceState === "recording" && key.return) {
+      setVoiceState("transcribing");
+      setNotice("Transcribing...");
+      void stopAndTranscribe().then((text) => {
+        setVoiceState("idle");
+        if (text.length > 0) {
+          setInputState({
+            cursorPosition: text.length,
+            value: text,
+          });
+          setNotice(`Transcribed. Press ENTER to send, or edit first.`);
+        } else {
+          setNotice("No speech detected. Try again with Ctrl+R.");
+        }
+      });
+      return;
+    }
+
+    if (voiceState === "recording" && inputValue === "") {
+      cancelRecording();
+      setVoiceState("idle");
+      setNotice(null);
+      return;
+    }
+
+    if (voiceState === "recording" || voiceState === "transcribing") {
       return;
     }
 
@@ -1569,12 +1629,18 @@ function ChatInput({
           )}
         </Text>
       </Box>
-      <Text>
-        <Text color="gray">
-          enter to send - / for commands - /exit to quit - cwd{" "}
-          {formatCwd(process.cwd())}
+      {voiceState === "recording" ? (
+        <Text color="red">Recording... press ENTER to stop</Text>
+      ) : voiceState === "transcribing" ? (
+        <Text color="yellow">Transcribing...</Text>
+      ) : (
+        <Text>
+          <Text color="gray">
+            enter to send - / for commands{voiceEnabled ? " - ctrl+r for voice" : ""} - /exit to quit - cwd{" "}
+            {formatCwd(process.cwd())}
+          </Text>
         </Text>
-      </Text>
+      )}
       {menuState.kind !== "none" ? (
         <SlashMenu
           currentModelId={currentModelId}

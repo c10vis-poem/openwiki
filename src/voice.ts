@@ -1,0 +1,130 @@
+import { exec, spawn, type ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
+import path from "node:path";
+import fs from "node:fs";
+
+const execAsync = promisify(exec);
+
+const HOME = process.env.HOME ?? "";
+const AUDIO_RAW = path.join(HOME, ".stt_raw.wav");
+const AUDIO_16K = path.join(HOME, ".stt_16k.wav");
+const TTS_OUT = path.join(HOME, ".tts_out.wav");
+
+function findAesopDir(): string | null {
+  const candidates = [
+    path.join(HOME, "aesop"),
+    path.join(HOME, "Aesop"),
+    path.join(HOME, "storage/shared/aesop"),
+  ];
+  for (const d of candidates) {
+    if (
+      fs.existsSync(path.join(d, "deploy/phone/stt_process.py")) &&
+      fs.existsSync(path.join(d, "deploy/phone/tts_speak.py"))
+    ) {
+      return d;
+    }
+  }
+  return null;
+}
+
+let cachedAvailable: boolean | undefined;
+let cachedAesopDir: string | null = null;
+
+export function isVoiceAvailable(): boolean {
+  if (cachedAvailable !== undefined) return cachedAvailable;
+  try {
+    const hasMic = fs.existsSync("/data/data/com.termux/files/usr/bin/termux-microphone-record");
+    const hasAesop = findAesopDir() !== null;
+    cachedAvailable = hasMic && hasAesop;
+    if (hasAesop) cachedAesopDir = findAesopDir();
+    return cachedAvailable;
+  } catch {
+    cachedAvailable = false;
+    return false;
+  }
+}
+
+function getAesopDir(): string {
+  if (cachedAesopDir) return cachedAesopDir;
+  cachedAesopDir = findAesopDir();
+  return cachedAesopDir ?? path.join(HOME, "aesop");
+}
+
+let recordingProcess: ChildProcess | null = null;
+
+export function startRecording(): void {
+  try { fs.unlinkSync(AUDIO_RAW); } catch {}
+  try { fs.unlinkSync(AUDIO_16K); } catch {}
+
+  recordingProcess = spawn("termux-microphone-record", [
+    "-f", AUDIO_RAW, "-e", "amr_wb", "-r", "16000", "-c", "1",
+  ]);
+
+  spawn("termux-vibrate", ["-d", "100"]);
+}
+
+export async function stopAndTranscribe(): Promise<string> {
+  try {
+    await execAsync("termux-microphone-record -q", { timeout: 3000 });
+  } catch {}
+  recordingProcess = null;
+
+  await new Promise((r) => globalThis.setTimeout(r, 400));
+
+  if (!fs.existsSync(AUDIO_RAW)) return "";
+
+  const sttScript = path.join(getAesopDir(), "deploy/phone/stt_process.py");
+
+  try {
+    await execAsync(
+      `ffmpeg -y -i "${AUDIO_RAW}" -ar 16000 -ac 1 -acodec pcm_s16le "${AUDIO_16K}"`,
+      { timeout: 15000 },
+    );
+  } catch {
+    return "";
+  }
+
+  try {
+    const { stdout } = await execAsync(
+      `proot-distro login debian --bind "${HOME}:${HOME}" -- python3 "${sttScript}" "${AUDIO_16K}"`,
+      { timeout: 60000 },
+    );
+    return stdout.trim();
+  } catch {
+    return "";
+  }
+}
+
+export async function speakText(text: string): Promise<void> {
+  if (!text || text.length === 0) return;
+
+  const ttsScript = path.join(getAesopDir(), "deploy/phone/tts_speak.py");
+  const truncated = text.slice(0, 500);
+
+  try { fs.unlinkSync(TTS_OUT); } catch {}
+
+  try {
+    await execAsync(
+      `proot-distro login debian --bind "${HOME}:${HOME}" -- python3 "${ttsScript}" "${TTS_OUT}" ${escapeShellArg(truncated)}`,
+      { timeout: 120000 },
+    );
+  } catch {
+    return;
+  }
+
+  if (fs.existsSync(TTS_OUT)) {
+    spawn("termux-media-player", ["play", TTS_OUT], { stdio: "ignore" });
+  }
+}
+
+function escapeShellArg(arg: string): string {
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+export function cancelRecording(): void {
+  if (recordingProcess) {
+    try { recordingProcess.kill(); } catch {}
+    recordingProcess = null;
+  }
+  try { spawn("termux-microphone-record", ["-q"], { stdio: "ignore" }); } catch {}
+}
