@@ -100,12 +100,13 @@ export async function speakText(text: string): Promise<void> {
 
   const ttsScript = path.join(getAesopDir(), "deploy/phone/tts_speak.py");
   const truncated = text.slice(0, 500);
+  const voiceSid = process.env.AESOP_VOICE ?? "0";
 
   try { fs.unlinkSync(TTS_OUT); } catch {}
 
   try {
     await execAsync(
-      `proot-distro login debian --bind "${HOME}:${HOME}" -- python3 "${ttsScript}" "${TTS_OUT}" ${escapeShellArg(truncated)}`,
+      `AESOP_VOICE=${voiceSid} proot-distro login debian --bind "${HOME}:${HOME}" -- python3 "${ttsScript}" "${TTS_OUT}" ${escapeShellArg(truncated)}`,
       { timeout: 120000 },
     );
   } catch {
