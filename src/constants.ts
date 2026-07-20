@@ -51,8 +51,9 @@ export const PROVIDER_CONFIGS: Record<OpenWikiProvider, ProviderConfig> = {
     baseURL: DEFAULT_LOCAL_ENDPOINT,
     label: "Local (llama-server)",
     modelOptions: [
-      { id: "qwen3.5-9b-q4_0", label: "Qwen3.5 9B Q4_0" },
-      { id: "qwen3-4b-thinking", label: "Qwen3 4B Thinking" },
+      { id: "qwen3.5-9b-q4_0", label: "Qwen3.5 9B Q4_0 (NPU)" },
+      { id: "qwen3-4b-instruct", label: "Qwen3 4B Instruct (NPU)" },
+      { id: "qwen3-4b-thinking-iq4_nl", label: "Qwen3 4B Thinking (CPU)" },
     ],
   },
   baseten: {

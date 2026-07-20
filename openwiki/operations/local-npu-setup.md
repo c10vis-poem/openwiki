@@ -13,7 +13,10 @@ Run a local Qwen model on the Snapdragon 8 Elite's Hexagon v79 HTP NPU, then poi
   - `libGenie.so` — Genie X core engine
   - `libSnpeHtpV79Stub.so` — v79 stub
   - `libQnnHtp.so` — Qualcomm Neural Network runtime
-- Model file: `Qwen3.5-9B-Q4_0.gguf` in `/sdcard/Download/`
+- Model files in `/sdcard/Download/`:
+  - `Qwen3.5-9B-Q4_0.gguf` — primary coding model (NPU-native via QNN backend)
+  - `Qwen3-4B-Thinking-2507-IQ4_NL.gguf` — reasoning model (~2.38 GB, CPU-only via llama.cpp)
+  - Optionally: Qwen3-4B-Instruct from QAI Hub (QAIRT-compiled, NPU-native)
 
 ## The binary problem
 
@@ -130,6 +133,24 @@ OPENWIKI_LOCAL_ENDPOINT=http://localhost:8080/v1
 | Remaining for KV cache | ~1–2.5 GB |
 
 Cap context (`-c 8192` or `-c 16384`) to keep the KV cache within the remaining buffer. The native 256K context will OOM.
+
+## Model landscape — NPU vs CPU execution
+
+Not all GGUF files run on the NPU. The execution path depends on how the model was quantized and packaged:
+
+| Model | Quant | Size | Runtime | Backend |
+| --- | --- | --- | --- | --- |
+| Qwen3.5-9B | Q4_0 | ~5.2 GB | QNN/QAIRT | **Hexagon NPU** |
+| Qwen3-4B-Instruct (QAI Hub) | q4_0 / w4a16 | ~2.5 GB | QAIRT/GenieX | **Hexagon NPU** |
+| Qwen3-4B-Thinking-2507 | IQ4_NL | ~2.38 GB | llama.cpp | **CPU** (ARM cores) |
+
+**Why the distinction matters:**
+
+- **Q4_0 GGUF + QNN backend** — the llama.cpp Hexagon backend (`-DLLAMA_QNN=ON`) can ingest standard Q4_0 GGUFs and route matrix ops to the v79 HTP. This is the path for the 9B model.
+- **QAIRT-compiled models from QAI Hub** — pre-compiled by Qualcomm for native NPU execution via GenieX. The Qwen3-4B-Instruct is available in this format.
+- **IQ4_NL (importance-matrix quant)** — community quant from Unsloth/bartowski optimized for llama.cpp on CPU/GPU. GenieX can load it via its llama.cpp plugin path, but execution falls back to Snapdragon ARM CPU or Adreno GPU, not the NPU.
+
+For OpenWiki coding tasks, the **Qwen3.5-9B Q4_0 on NPU** is the clear winner — 9B parameters give substantially better code comprehension, multi-turn tracking, and generation quality than 4B. The 4B Thinking model is a fallback for when you want explicit chain-of-thought reasoning and can tolerate CPU-speed inference.
 
 ## AESOP tier mapping
 
