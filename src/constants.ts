@@ -6,15 +6,19 @@ export const FIREWORKS_API_KEY_ENV_KEY = "FIREWORKS_API_KEY";
 export const OPENAI_API_KEY_ENV_KEY = "OPENAI_API_KEY";
 export const ANTHROPIC_API_KEY_ENV_KEY = "ANTHROPIC_API_KEY";
 export const OPENROUTER_API_KEY_ENV_KEY = "OPENROUTER_API_KEY";
+export const LOCAL_API_KEY_ENV_KEY = "LOCAL_API_KEY";
 export const OPENWIKI_PROVIDER_ENV_KEY = "OPENWIKI_PROVIDER";
 export const OPENWIKI_MODEL_ID_ENV_KEY = "OPENWIKI_MODEL_ID";
+export const OPENWIKI_LOCAL_ENDPOINT_ENV_KEY = "OPENWIKI_LOCAL_ENDPOINT";
 export const DEFAULT_PROVIDER = "openrouter";
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+export const DEFAULT_LOCAL_ENDPOINT = "http://localhost:8080/v1";
 
 export type OpenWikiProvider =
   | "anthropic"
   | "baseten"
   | "fireworks"
+  | "local"
   | "openai"
   | "openrouter";
 
@@ -34,6 +38,7 @@ type ProviderConfig = {
 
 export const SELECTABLE_OPENWIKI_PROVIDERS = [
   "openrouter",
+  "local",
   "baseten",
   "fireworks",
   "openai",
@@ -41,6 +46,15 @@ export const SELECTABLE_OPENWIKI_PROVIDERS = [
 ] as const satisfies readonly SelectableOpenWikiProvider[];
 
 export const PROVIDER_CONFIGS: Record<OpenWikiProvider, ProviderConfig> = {
+  local: {
+    apiKeyEnvKey: LOCAL_API_KEY_ENV_KEY,
+    baseURL: DEFAULT_LOCAL_ENDPOINT,
+    label: "Local (llama-server)",
+    modelOptions: [
+      { id: "qwen3.5-9b-q4_0", label: "Qwen3.5 9B Q4_0" },
+      { id: "qwen3-4b-thinking", label: "Qwen3 4B Thinking" },
+    ],
+  },
   baseten: {
     apiKeyEnvKey: BASETEN_API_KEY_ENV_KEY,
     baseURL: "https://inference.baseten.co/v1",
@@ -143,6 +157,16 @@ export function normalizeProvider(
 
 export function isValidProvider(value: string): value is OpenWikiProvider {
   return value in PROVIDER_CONFIGS;
+}
+
+export function providerRequiresApiKey(provider: OpenWikiProvider): boolean {
+  return provider !== "local";
+}
+
+export function resolveLocalEndpoint(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return env[OPENWIKI_LOCAL_ENDPOINT_ENV_KEY]?.trim() || DEFAULT_LOCAL_ENDPOINT;
 }
 
 export function resolveConfiguredProvider(
