@@ -2,6 +2,8 @@
 
 Run a local Qwen model on the Snapdragon 8 Elite's Hexagon v79 HTP NPU, then point the OpenWiki CLI at it instead of a cloud provider.
 
+See [device-inventory.md](device-inventory.md) for the full catalog of QAIRT SDK assets, model configs, and library paths on-device.
+
 ## Hardware assumptions
 
 - Snapdragon 8 Elite (SM8750), 16 GB RAM
@@ -33,7 +35,7 @@ Check what you have:
 ```bash
 find ~/bin/ -name "*llama*" -type f
 find /sdcard/Download/ -name "*llama*" -type f
-ls /sdcard/Download/aarch64-oe-linux-gcc11.2/
+ls /sdcard/Download/v2.48.0.260626/qairt/2.48.0.260626/lib/aarch64-oe-linux-gcc11.2/
 ```
 
 ### Path B — Compile llama.cpp with QNN backend in Termux
@@ -46,7 +48,7 @@ git clone --depth 1 https://github.com/ggml-org/llama.cpp && cd llama.cpp
 mkdir build && cd build
 cmake .. \
   -DLLAMA_QNN=ON \
-  -DQNN_SDK_DIR=$HOME/openwiki/aarch64-oe-linux-gcc11.2 \
+  -DQNN_SDK_DIR=/sdcard/Download/v2.48.0.260626/qairt/2.48.0.260626 \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release -j$(nproc)
 ```
@@ -63,7 +65,8 @@ Once you have a QNN-enabled binary, start the server. Key flags:
 - `GGML_HEXAGON_NDEV=4` — parallelize across 4 HTP compute threads
 
 ```bash
-LD_LIBRARY_PATH=/sdcard/Download/:$HOME/openwiki/aarch64-oe-linux-gcc11.2:$LD_LIBRARY_PATH \
+QNN_SDK=/sdcard/Download/v2.48.0.260626/qairt/2.48.0.260626
+LD_LIBRARY_PATH=$QNN_SDK/lib/aarch64-android:$QNN_SDK/lib/hexagon-v79/unsigned:$LD_LIBRARY_PATH \
   GGML_HEXAGON_NDEV=4 \
   $HOME/bin/llama-server \
   --no-mmap \
@@ -140,8 +143,8 @@ Not all GGUF files run on the NPU. The execution path depends on how the model w
 
 | Model | Quant | Size | Runtime | Backend |
 | --- | --- | --- | --- | --- |
-| Qwen3.5-9B | Q4_0 | ~5.2 GB | QNN/QAIRT | **Hexagon NPU** |
-| Qwen3-4B-Instruct (QAI Hub) | q4_0 / w4a16 | ~2.5 GB | QAIRT/GenieX | **Hexagon NPU** |
+| Qwen3.5-9B | Q4_0 | ~5.2 GB | llama.cpp + QNN | **Hexagon NPU** (runtime-routed, not precompiled) |
+| Qwen3-4B-Instruct (QAI Hub) | q4_0 / w4a16 | ~2.5 GB | QAIRT/GenieX | **Hexagon NPU** (precompiled) |
 | Qwen3-4B-Thinking-2507 | IQ4_NL | ~2.38 GB | llama.cpp | **CPU** (ARM cores) |
 
 **Why the distinction matters:**
