@@ -22,6 +22,7 @@ import {
   stopAndTranscribe,
   stopSpeaking,
   voiceDiagnostics,
+  waitForVAD,
 } from "./voice.js";
 import {
   getCredentialDiagnostics,
@@ -1292,8 +1293,25 @@ function ChatInput({
     if (voiceEnabled && key.ctrl && inputValue === "r") {
       if (voiceState === "idle") {
         setVoiceState("recording");
-        setNotice("Recording... press ENTER to stop and transcribe.");
+        setNotice("Recording... speak, then pause to auto-stop (or ENTER).");
         startRecording();
+        void waitForVAD().then((trigger) => {
+          if (trigger === "no-vad") return;
+          setVoiceState("transcribing");
+          setNotice("Transcribing...");
+          void stopAndTranscribe().then((text) => {
+            setVoiceState("idle");
+            if (text.length > 0) {
+              setInputState({
+                cursorPosition: text.length,
+                value: text,
+              });
+              setNotice(`Transcribed. Press ENTER to send, or edit first.`);
+            } else {
+              setNotice("No speech detected. Try again with Ctrl+R.");
+            }
+          });
+        });
       }
       return;
     }
@@ -1661,8 +1679,9 @@ function ChatInput({
       ) : (
         <Text>
           <Text color="gray">
-            enter to send - / for commands{voiceEnabled ? " - ctrl+r voice - ctrl+s stop" : ""} - /exit to quit - cwd{" "}
-            {formatCwd(process.cwd())}
+            enter to send - / for commands
+            {voiceEnabled ? " - ctrl+r voice - ctrl+s stop" : ""} - /exit to
+            quit - cwd {formatCwd(process.cwd())}
           </Text>
         </Text>
       )}

@@ -788,7 +788,9 @@ function moveSelectionIndex(
 }
 
 function getProviderArticle(provider: OpenWikiProvider): "a" | "an" {
-  return provider === "baseten" || provider === "fireworks" || provider === "local"
+  return provider === "baseten" ||
+    provider === "fireworks" ||
+    provider === "local"
     ? "a"
     : "an";
 }

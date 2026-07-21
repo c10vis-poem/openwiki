@@ -40,11 +40,11 @@ The QAIRT skeletons on-device (`libQnnHtpV79Skel.so`, etc.) are for the QNN/QAIR
 
 ### Build dependencies
 
-| Component | What it does | Source |
-| --- | --- | --- |
+| Component        | What it does                                                              | Source                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Hexagon SDK 6.6+ | Cross-compiler (`hexagon-clang`), QURT runtime, IDL compiler, SDK headers | [snapdragon-toolchain/hexagon-sdk](https://github.com/snapdragon-toolchain/hexagon-sdk/releases) (trimmed, ~662 MB) |
-| Android NDK r27+ | ARM64 cross-compiler, Android sysroot, linker | [developer.android.com](https://developer.android.com/ndk/downloads) |
-| FastRPC headers | `remote.h`, `dspqueue.h`, `rpcmem.h`, `AEEStdDef.h`, `AEEStdErr.h` | Bundled in Hexagon SDK at `incs/` |
+| Android NDK r27+ | ARM64 cross-compiler, Android sysroot, linker                             | [developer.android.com](https://developer.android.com/ndk/downloads)                                                |
+| FastRPC headers  | `remote.h`, `dspqueue.h`, `rpcmem.h`, `AEEStdDef.h`, `AEEStdErr.h`        | Bundled in Hexagon SDK at `incs/`                                                                                   |
 
 ## Path A — Pre-built binaries (recommended)
 
@@ -113,6 +113,7 @@ cmake --build build-snapdragon --config Release -j$(nproc)
 The binaries land in `build-snapdragon/bin/` and the skeleton .so files in `build-snapdragon/`.
 
 Transfer to phone:
+
 ```bash
 # From the PC (phone connected via USB)
 adb push build-snapdragon/bin/llama-server /data/local/tmp/llama-server
@@ -140,6 +141,7 @@ LD_LIBRARY_PATH=$INSTALL_DIR/lib:$QNN_SDK/lib/aarch64-android:$QNN_SDK/lib/hexag
 Or use the generated `run-server.sh` if you used the install script.
 
 Key flags:
+
 - `--no-mmap` — allocates weights into a concrete memory buffer instead of mmap; prevents Android's LMK from swapping chunks mid-inference
 - `-c 8192` or `-c 16384` — cap context to prevent KV cache from eating the ~2.5 GB free buffer after model load
 - `--port 8080` — the OpenAI-compatible endpoint
@@ -155,6 +157,7 @@ ggml-hex: new session: HTP0 : ... uri file:///libggml-htp-v79.so?htp_iface_skel_
 ```
 
 If it says `failed to load libcdsprpc.so`, the FastRPC client library isn't accessible from Termux. Try:
+
 ```bash
 # Find the system library
 find /vendor/lib64 /system/vendor/lib64 -name "libcdsprpc.so" 2>/dev/null
@@ -202,12 +205,12 @@ OPENWIKI_LOCAL_ENDPOINT=http://localhost:8080/v1
 
 ## Memory budget (16 GB device)
 
-| Component | RAM |
-| --- | --- |
-| Android OS + apps | ~8–9.5 GB |
-| Free for model | ~6.5–8 GB |
+| Component               | RAM         |
+| ----------------------- | ----------- |
+| Android OS + apps       | ~8–9.5 GB   |
+| Free for model          | ~6.5–8 GB   |
 | Qwen3.5-9B Q4_0 weights | ~5.2–5.5 GB |
-| Remaining for KV cache | ~1–2.5 GB |
+| Remaining for KV cache  | ~1–2.5 GB   |
 
 Cap context (`-c 8192` or `-c 16384`) to keep the KV cache within the remaining buffer. The native 256K context will OOM.
 
@@ -215,11 +218,11 @@ Cap context (`-c 8192` or `-c 16384`) to keep the KV cache within the remaining 
 
 Not all GGUF files run on the NPU. The execution path depends on how the model was quantized and packaged:
 
-| Model | Quant | Size | Runtime | Backend |
-| --- | --- | --- | --- | --- |
-| Qwen3.5-9B | Q4_0 | ~5.2 GB | llama.cpp + ggml-hexagon | **Hexagon NPU** (runtime-routed, not precompiled) |
-| Qwen3-4B-Instruct (QAI Hub) | q4_0 / w4a16 | ~2.5 GB | QAIRT/GenieX | **Hexagon NPU** (precompiled) |
-| Qwen3-4B-Thinking-2507 | IQ4_NL | ~2.38 GB | llama.cpp | **CPU** (ARM cores) |
+| Model                       | Quant        | Size     | Runtime                  | Backend                                           |
+| --------------------------- | ------------ | -------- | ------------------------ | ------------------------------------------------- |
+| Qwen3.5-9B                  | Q4_0         | ~5.2 GB  | llama.cpp + ggml-hexagon | **Hexagon NPU** (runtime-routed, not precompiled) |
+| Qwen3-4B-Instruct (QAI Hub) | q4_0 / w4a16 | ~2.5 GB  | QAIRT/GenieX             | **Hexagon NPU** (precompiled)                     |
+| Qwen3-4B-Thinking-2507      | IQ4_NL       | ~2.38 GB | llama.cpp                | **CPU** (ARM cores)                               |
 
 **Why the distinction matters:**
 
