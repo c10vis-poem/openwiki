@@ -23,6 +23,7 @@ The OpenWiki shell agent is the coordinator. It calls Agent 1 for quick lookups,
 **Critical Rule:** DO NOT run `llama-server` + QAIRT as separate background processes. The Hexagon HTP (Tensor Processing Unit) is shared — two runtimes = context-switch thrashing = 0 tokens/sec.
 
 **Solution:** Use GenieX Unified Stack (part of QAIRT SDK v2.48.0.260626), which contains:
+
 - **QAIRT Engine:** Direct HTP tensor graphs for hard-compiled .dlc models
 - **llama.cpp Plugin:** Dynamic GGUF wrapper that compiles to NPU code
 
@@ -30,15 +31,16 @@ GenieX coordinates both, preventing tensor collision.
 
 ### 1.2 Model Configuration (Locked Down)
 
-| Agent | Model | Size | RAM | Role | State |
-|-------|-------|------|-----|------|-------|
-| Agent 1 | Qwen 3.5 2B | ~1.2GB | 1.6GB | Router/JSON formatter | Always-hot |
-| Agent 2 | Qwen 3.5 9B Q4_0 | ~5.0GB | 5.74GB | Deep reasoning/synthesis | On-demand with auto-purge |
-| **Total Budget** | — | ~6.2GB | **~7.44GB** | — | Within 9GB ceiling |
+| Agent            | Model            | Size   | RAM         | Role                     | State                     |
+| ---------------- | ---------------- | ------ | ----------- | ------------------------ | ------------------------- |
+| Agent 1          | Qwen 3.5 2B      | ~1.2GB | 1.6GB       | Router/JSON formatter    | Always-hot                |
+| Agent 2          | Qwen 3.5 9B Q4_0 | ~5.0GB | 5.74GB      | Deep reasoning/synthesis | On-demand with auto-purge |
+| **Total Budget** | —                | ~6.2GB | **~7.44GB** | —                        | Within 9GB ceiling        |
 
 ### 1.3 Model Download Strategy
 
 **Agent 1 (Qwen 3.5 2B):**
+
 ```bash
 # Try NexaAI for NPU-optimized binary first
 mkdir -p ~/models/qwen-2b
@@ -47,6 +49,7 @@ mkdir -p ~/models/qwen-2b
 ```
 
 **Agent 2 (Qwen 3.5 9B Q4_0):**
+
 ```bash
 # Standard GGUF Q4_0 (optimal for Snapdragon)
 mkdir -p ~/models/qwen-9b
@@ -59,13 +62,14 @@ mkdir -p ~/models/qwen-9b
 ### 1.4 GenieX Configuration
 
 Create `~/.geniex/config.yaml`:
+
 ```yaml
 engines:
   qairt:
     models:
       - path: ~/models/qwen-2b/qwen-2b.gguf
         alias: "qwen-2b"
-        runtime: llama_cpp  # or native if NexaAI binary
+        runtime: llama_cpp # or native if NexaAI binary
       - path: ~/models/qwen-9b/qwen-9b-q4_0.gguf
         alias: "qwen-9b"
         runtime: llama_cpp
@@ -74,8 +78,8 @@ engines:
     threads: -1
 
 scheduling:
-  isolation: "none"  # Let GenieX coordinate internally
-  tensor_mode: "shared"  # Single HTP access point
+  isolation: "none" # Let GenieX coordinate internally
+  tensor_mode: "shared" # Single HTP access point
 ```
 
 ---
@@ -125,7 +129,7 @@ Return immediate response if memory hits. If task is complex, write handoff.
   "query": "user's original question",
   "memory_snapshot": {
     "recent_events": [
-      {"timestamp": "2026-07-25T12:34:56Z", "action": "...", "context": "..."}
+      { "timestamp": "2026-07-25T12:34:56Z", "action": "...", "context": "..." }
     ],
     "user_preferences": {
       "model_choice": "qwen-9b",
@@ -140,6 +144,7 @@ Return immediate response if memory hits. If task is complex, write handoff.
 ```
 
 **Agent 2 Trigger:** Background script monitors `_handoff.md`:
+
 1. Reads payload + MEMO context
 2. Executes heavy synthesis
 3. Writes result to `~/openwiki/_result.md`
@@ -173,6 +178,7 @@ bash ~/aesop/deploy/phone/setup-voice.sh
 ```
 
 Installs:
+
 - Silero VAD (voice activity detection, tail-mode for end-of-speech)
 - Moonshine-base-int8 STT (fast, local transcription)
 - Kokoro TTS (synthesis via sherpa-onnx)
@@ -201,12 +207,14 @@ TTS (tts_speak.py)  — Kokoro synthesis via sherpa-onnx → audio playback
 Voice pipeline expects LLM at `http://localhost:8080/v1`.
 
 **Option A: GenieX API Server** (recommended)
+
 ```bash
 # GenieX exposes both models via OpenAI-compatible endpoint
 geniex-server --config ~/.geniex/config.yaml --port 8080
 ```
 
 **Option B: llama-server wrapper** (direct GGUF access)
+
 ```bash
 ./llama-server \
   --model ~/models/qwen-9b/qwen-9b-q4_0.gguf \
@@ -245,6 +253,7 @@ cd ~/openwiki && openwiki --init
 ### 4.2 Agent Loop Configuration
 
 OpenWiki shell agent runs in a tmux session, continuously:
+
 1. Listens for user queries (voice or text via `_input.md`)
 2. Calls Agent 1 endpoint (`http://localhost:8080/v1/messages`)
 3. Checks MEMO layer for context
@@ -269,10 +278,10 @@ fi
 (
   # Set memory budget limit
   ulimit -v $((6 * 1024 * 1024))  # 6GB hard ceiling
-  
+
   # Read handoff payload
   PAYLOAD=$(cat ~/openwiki/_handoff.md)
-  
+
   # Call Agent 2 via GenieX with deep reasoning
   curl -s http://localhost:8080/v1/messages \
     -H "Content-Type: application/json" \
@@ -284,13 +293,13 @@ fi
         \"content\": $(echo "$PAYLOAD" | jq -c '.memory_snapshot | @json')
       }]
     }" > ~/openwiki/_result.md.tmp
-  
+
   # Atomic rename (prevent partial reads)
   mv ~/openwiki/_result.md.tmp ~/openwiki/_result.md
-  
+
   # Clean up handoff signal
   rm ~/openwiki/_handoff.md
-  
+
   # Immediately drop context cache (free RAM)
   # (GenieX auto-purges on next model load; explicit clear if available)
   sync
@@ -368,12 +377,12 @@ fi
 
 ### 6.1 Quantization Guide for Snapdragon Elite
 
-| Quant | Size (9B) | Inference | Quality | Recommendation |
-|-------|-----------|-----------|---------|-----------------|
-| Q4_0  | ~5.0GB    | Fast      | Good    | **Use this (optimal)** |
-| Q4_K_M | ~5.5GB   | Slower    | Better  | GPU-heavy only |
-| Q8_0  | ~8.0GB    | Very slow | Excellent | Don't use on phone |
-| f16   | ~18GB     | Slowest   | Perfect | Never on phone |
+| Quant  | Size (9B) | Inference | Quality   | Recommendation         |
+| ------ | --------- | --------- | --------- | ---------------------- |
+| Q4_0   | ~5.0GB    | Fast      | Good      | **Use this (optimal)** |
+| Q4_K_M | ~5.5GB    | Slower    | Better    | GPU-heavy only         |
+| Q8_0   | ~8.0GB    | Very slow | Excellent | Don't use on phone     |
+| f16    | ~18GB     | Slowest   | Perfect   | Never on phone         |
 
 **Why Q4_0 for Snapdragon:** Balances speed, quality, and RAM on 6-9GB ceiling.
 
@@ -406,19 +415,20 @@ free -h
 ### 7.2 Context Window Management (RAM Pressure)
 
 If approaching 6GB ceiling:
+
 - Reduce Agent 2 context: `--ctx-size 1024` instead of 2048
 - Lower max tokens per response: `--n-predict 512`
 - Pre-purge Agent 2 cache: trigger cache-drop in `trigger-agent-2.sh`
 
 ### 7.3 Common Failure Modes
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| 0 tokens/sec inference | HTP thrashing (two runtimes fighting) | Use GenieX, not separate llama-cli |
-| OOM crash at 6GB | Device memory pressure | Pre-kill cache, reduce context |
-| VAD never triggers | Microphone not initialized | Check `termux-mic-test` |
-| Transcription empty | STT model path wrong | Verify `~/models/moonshine/` exists |
-| No device persistence | Boot script not in tmux | Add auto-launch to `~/.bashrc` |
+| Symptom                | Cause                                 | Fix                                 |
+| ---------------------- | ------------------------------------- | ----------------------------------- |
+| 0 tokens/sec inference | HTP thrashing (two runtimes fighting) | Use GenieX, not separate llama-cli  |
+| OOM crash at 6GB       | Device memory pressure                | Pre-kill cache, reduce context      |
+| VAD never triggers     | Microphone not initialized            | Check `termux-mic-test`             |
+| Transcription empty    | STT model path wrong                  | Verify `~/models/moonshine/` exists |
+| No device persistence  | Boot script not in tmux               | Add auto-launch to `~/.bashrc`      |
 
 ---
 
