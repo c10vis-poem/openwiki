@@ -30,7 +30,9 @@ import {
   OPENROUTER_FALLBACK_MODEL_IDS,
   OPENWIKI_MODEL_ID_ENV_KEY,
   OPENWIKI_PROVIDER_ENV_KEY,
+  providerRequiresApiKey,
   resolveConfiguredProvider,
+  resolveLocalEndpoint,
   type OpenWikiProvider,
 } from "../constants.js";
 import {
@@ -355,6 +357,10 @@ function isFileNotFoundError(error: unknown): boolean {
 }
 
 function ensureProviderKey(provider: OpenWikiProvider): void {
+  if (!providerRequiresApiKey(provider)) {
+    return;
+  }
+
   const apiKeyEnvKey = getProviderApiKeyEnvKey(provider);
 
   if (!process.env[apiKeyEnvKey]) {
@@ -400,6 +406,16 @@ async function createModel(provider: OpenWikiProvider, modelId: string) {
       models,
       route: "fallback",
       siteName: "OpenWiki",
+    });
+  }
+
+  if (provider === "local") {
+    const endpoint = resolveLocalEndpoint();
+
+    return new ChatOpenAI({
+      apiKey: process.env[getProviderApiKeyEnvKey(provider)] || "local",
+      configuration: { baseURL: endpoint },
+      model: modelId,
     });
   }
 
