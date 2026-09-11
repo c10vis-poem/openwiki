@@ -36,34 +36,47 @@ jobs:
           echo "behind=$behind" >> "$GITHUB_OUTPUT"
           echo "Fork main is $behind commit(s) behind upstream/main"
 
-      - name: Attempt clean merge
+      # Never push straight to main, clean or not — everything lands via a PR so it
+      # goes through Checks (format, lint, gitleaks secret scan) first. See checks.yml.
+      - name: Create sync branch and attempt merge
         if: steps.check.outputs.behind != '0'
         id: merge
         run: |
-          git checkout main
+          branch="sync/upstream-$(date +%Y%m%d)"
+          git checkout -b "$branch"
           if git merge upstream/main --no-edit; then
             echo "clean=true" >> "$GITHUB_OUTPUT"
           else
-            git merge --abort
+            git add -A
+            git commit -m "sync: merge upstream/main (unresolved conflicts, needs manual resolution)"
             echo "clean=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          git push origin "$branch"
 
-      # Clean case: no conflicts with this fork's custom commits — push straight to main.
-      - name: Push clean merge to main
+      # Clean case: no textual conflict with this fork's own commits. Open a PR and
+      # let GitHub's native auto-merge land it once required checks pass — nothing
+      # here bypasses Checks, it only queues the merge for after they're green.
+      - name: Open PR and enable auto-merge (clean)
         if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'true'
-        run: git push origin main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_url=$(gh pr create \
+            --title "sync: merge upstream langchain-ai/openwiki@main ($(date +%Y-%m-%d))" \
+            --body "Automated upstream sync — merged cleanly against this fork's own commits. Will merge into \`main\` automatically once required checks (format, lint, secret scan) pass." \
+            --base main --head "${{ steps.merge.outputs.branch }}")
+          gh pr merge "$pr_url" --auto --merge
 
-      # Conflict case: don't touch main. Open a branch + PR so a human/agent resolves it.
+      # Conflict case: don't touch main, and do NOT enable auto-merge. Push the
+      # attempted merge with its conflict markers so a human/agent resolves it,
+      # then merges by hand once Checks pass.
       - name: Open PR for conflicting sync
         if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          branch="sync/upstream-$(date +%Y%m%d)"
-          git checkout -b "$branch"
-          git merge upstream/main --no-edit || true
-          git push origin "$branch" --force-with-lease
           gh pr create \
-            --title "sync: merge upstream langchain-ai/openwiki@main ($(date +%Y-%m-%d))" \
-            --body "Automated upstream sync found conflicts with this fork's own commits and could not fast-merge. This branch has the merge attempted, with unresolved conflict markers where they occur — resolve them before merging into \`main\`." \
-            --base main --head "$branch" || echo "PR may already exist for today"
+            --title "sync: merge upstream langchain-ai/openwiki@main ($(date +%Y-%m-%d)) — CONFLICTS" \
+            --body "Automated upstream sync found conflicts with this fork's own commits and could not fast-merge. This branch has the merge attempted, with unresolved conflict markers where they occur — resolve them, then merge manually once Checks pass. Auto-merge is intentionally NOT enabled on this PR." \
+            --base main --head "${{ steps.merge.outputs.branch }}" || echo "PR may already exist for today"
