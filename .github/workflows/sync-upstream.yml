@@ -1,0 +1,69 @@
+name: Sync with upstream
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # daily at 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.repository != 'langchain-ai/openwiki'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/langchain-ai/openwiki.git
+          git fetch upstream main
+
+      - name: Check whether main is behind upstream
+        id: check
+        run: |
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "Fork main is $behind commit(s) behind upstream/main"
+
+      - name: Attempt clean merge
+        if: steps.check.outputs.behind != '0'
+        id: merge
+        run: |
+          git checkout main
+          if git merge upstream/main --no-edit; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Clean case: no conflicts with this fork's custom commits — push straight to main.
+      - name: Push clean merge to main
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'true'
+        run: git push origin main
+
+      # Conflict case: don't touch main. Open a branch + PR so a human/agent resolves it.
+      - name: Open PR for conflicting sync
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.clean == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch="sync/upstream-$(date +%Y%m%d)"
+          git checkout -b "$branch"
+          git merge upstream/main --no-edit || true
+          git push origin "$branch" --force-with-lease
+          gh pr create \
+            --title "sync: merge upstream langchain-ai/openwiki@main ($(date +%Y-%m-%d))" \
+            --body "Automated upstream sync found conflicts with this fork's own commits and could not fast-merge. This branch has the merge attempted, with unresolved conflict markers where they occur — resolve them before merging into \`main\`." \
+            --base main --head "$branch" || echo "PR may already exist for today"
