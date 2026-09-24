@@ -1,0 +1,149 @@
+name: Build llama-server (Hexagon NPU)
+
+on:
+  workflow_dispatch:
+    inputs:
+      llama_cpp_ref:
+        description: "llama.cpp git ref (branch, tag, or SHA)"
+        default: "master"
+        required: false
+
+jobs:
+  build:
+    name: Cross-compile for Snapdragon 8 Elite (arm64-android + Hexagon v79)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    env:
+      HEXAGON_SDK_VERSION: "6.6.0.0"
+      ANDROID_NDK_VERSION: "r27c"
+      LLAMA_CPP_REF: ${{ github.event.inputs.llama_cpp_ref || 'master' }}
+
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Download Hexagon SDK (trimmed, ~662 MB)
+        run: |
+          curl -L -o /tmp/hexagon-sdk.tar.xz \
+            "https://github.com/snapdragon-toolchain/hexagon-sdk/releases/download/v${HEXAGON_SDK_VERSION}/hexagon-sdk-v${HEXAGON_SDK_VERSION}-amd64-lnx.tar.xz"
+          mkdir -p /opt/hexagon
+          tar -xf /tmp/hexagon-sdk.tar.xz -C /opt/hexagon
+          rm /tmp/hexagon-sdk.tar.xz
+          echo "HEXAGON_SDK_ROOT=/opt/hexagon/${HEXAGON_SDK_VERSION}" >> $GITHUB_ENV
+
+      - name: Find Hexagon tools root
+        run: |
+          SDK="/opt/hexagon/${HEXAGON_SDK_VERSION}"
+          TOOLS_DIR=$(python3 -c "
+          import json, pathlib
+          cfg = json.loads(pathlib.Path('${SDK}/hexagon_sdk.json').read_text())
+          print(cfg['root']['tools']['info'][0]['path'])
+          ")
+          echo "HEXAGON_TOOLS_ROOT=${SDK}/${TOOLS_DIR}" >> $GITHUB_ENV
+          echo "Found Hexagon tools at: ${SDK}/${TOOLS_DIR}"
+
+      - name: Download Android NDK
+        run: |
+          curl -L -o /tmp/ndk.zip \
+            "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+          unzip -q /tmp/ndk.zip -d /opt
+          rm /tmp/ndk.zip
+          echo "ANDROID_NDK_ROOT=/opt/android-ndk-${ANDROID_NDK_VERSION}" >> $GITHUB_ENV
+
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 --branch "$LLAMA_CPP_REF" \
+            https://github.com/ggml-org/llama.cpp /tmp/llama.cpp || \
+          git clone --depth 1 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp
+          echo "LLAMA_REF=$(git -C /tmp/llama.cpp rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Copy CMakeUserPresets
+        run: |
+          cp /tmp/llama.cpp/docs/backend/snapdragon/CMakeUserPresets.json \
+             /tmp/llama.cpp/CMakeUserPresets.json
+
+      - name: Configure (arm64-android-snapdragon-release)
+        working-directory: /tmp/llama.cpp
+        run: |
+          cmake --preset arm64-android-snapdragon-release \
+            -B build-snapdragon \
+            -DGGML_OPENCL=OFF \
+            -DLLAMA_BUILD_UI=OFF
+
+      - name: Build
+        working-directory: /tmp/llama.cpp
+        run: cmake --build build-snapdragon --config Release -j$(nproc)
+
+      - name: Package binaries
+        run: |
+          PKG="/tmp/llama-hexagon-v79"
+          mkdir -p "$PKG/lib" "$PKG/bin"
+
+          # Main binaries
+          cp /tmp/llama.cpp/build-snapdragon/bin/llama-server "$PKG/bin/" 2>/dev/null || true
+          cp /tmp/llama.cpp/build-snapdragon/bin/llama-cli "$PKG/bin/" 2>/dev/null || true
+
+          # Shared libraries
+          for lib in libllama.so libggml.so libggml-base.so libggml-hexagon.so libggml-cpu.so; do
+            find /tmp/llama.cpp/build-snapdragon -name "$lib" -exec cp {} "$PKG/lib/" \; 2>/dev/null
+          done
+
+          # HTP skeleton .so files (DSP-side, critical for NPU)
+          for skel in libggml-htp-v73.so libggml-htp-v75.so libggml-htp-v79.so libggml-htp-v81.so; do
+            find /tmp/llama.cpp/build-snapdragon -name "$skel" -exec cp {} "$PKG/lib/" \; 2>/dev/null
+          done
+
+          # Install script for the phone
+          cat > "$PKG/install.sh" << 'INSTALL_EOF'
+          #!/data/data/com.termux/files/usr/bin/bash
+          # Install llama-server with Hexagon NPU support
+          set -e
+
+          INSTALL_DIR="$HOME/llama-hexagon"
+          mkdir -p "$INSTALL_DIR/lib" "$INSTALL_DIR/bin"
+
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+          cp "$SCRIPT_DIR/bin/"* "$INSTALL_DIR/bin/"
+          cp "$SCRIPT_DIR/lib/"* "$INSTALL_DIR/lib/"
+          chmod +x "$INSTALL_DIR/bin/"*
+
+          cat > "$INSTALL_DIR/run-server.sh" << 'RUN_EOF'
+          #!/data/data/com.termux/files/usr/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          QNN_SDK=/sdcard/Download/v2.48.0.260626/qairt/2.48.0.260626
+
+          MODEL="${1:-/sdcard/Download/Qwen3.5-9B-Q4_0.gguf}"
+          CTX="${2:-8192}"
+          PORT="${3:-8080}"
+
+          LD_LIBRARY_PATH="$DIR/lib:$QNN_SDK/lib/aarch64-android:$QNN_SDK/lib/hexagon-v79/unsigned:$LD_LIBRARY_PATH" \
+            GGML_HEXAGON_NDEV=4 \
+            "$DIR/bin/llama-server" \
+            --no-mmap \
+            -m "$MODEL" \
+            -c "$CTX" \
+            --port "$PORT"
+          RUN_EOF
+          chmod +x "$INSTALL_DIR/run-server.sh"
+
+          echo "Installed to $INSTALL_DIR"
+          echo "Run: $INSTALL_DIR/run-server.sh"
+          INSTALL_EOF
+
+          # List what we packaged
+          echo "=== Package contents ==="
+          find "$PKG" -type f -exec ls -lh {} \;
+
+          cd /tmp && tar czf llama-hexagon-v79.tar.gz llama-hexagon-v79/
+          ls -lh /tmp/llama-hexagon-v79.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-hexagon-v79-${{ env.LLAMA_REF }}
+          path: /tmp/llama-hexagon-v79.tar.gz
+          retention-days: 30

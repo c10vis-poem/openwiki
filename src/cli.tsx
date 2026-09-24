@@ -15,6 +15,16 @@ import {
   type InitSetupResult,
 } from "./credentials.js";
 import {
+  cancelRecording,
+  isVoiceAvailable,
+  speakText,
+  startRecording,
+  stopAndTranscribe,
+  stopSpeaking,
+  voiceDiagnostics,
+  waitForVAD,
+} from "./voice.js";
+import {
   getCredentialDiagnostics,
   loadOpenWikiEnv,
   saveOpenWikiEnv,
@@ -340,6 +350,17 @@ function App({ command }: AppProps) {
           },
         ]);
         nextCompletedRunId.current += 1;
+
+        if (isVoiceAvailable() && process.env.AESOP_TTS !== "0") {
+          const responseText = activeRunLog.current
+            .filter((item) => item.type === "text")
+            .map((item) => item.content)
+            .join("")
+            .trim();
+          if (responseText.length > 0) {
+            void speakText(responseText);
+          }
+        }
       })
       .catch((error: unknown) => {
         if (!mountedRef.current || activeRunId.current !== runId) {
@@ -1240,6 +1261,10 @@ function ChatInput({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [voiceState, setVoiceState] = useState<
+    "idle" | "recording" | "transcribing"
+  >("idle");
+  const voiceEnabled = isVoiceAvailable();
   const input = inputState.value;
   const cursorPosition = inputState.cursorPosition;
 
@@ -1256,6 +1281,67 @@ function ChatInput({
 
   useInput((inputValue, key) => {
     if (isSaving) {
+      return;
+    }
+
+    if (voiceEnabled && key.ctrl && inputValue === "s") {
+      stopSpeaking();
+      setNotice("Speech stopped.");
+      return;
+    }
+
+    if (voiceEnabled && key.ctrl && inputValue === "r") {
+      if (voiceState === "idle") {
+        setVoiceState("recording");
+        setNotice("Recording... speak, then pause to auto-stop (or ENTER).");
+        startRecording();
+        void waitForVAD().then((trigger) => {
+          if (trigger === "no-vad") return;
+          setVoiceState("transcribing");
+          setNotice("Transcribing...");
+          void stopAndTranscribe().then((text) => {
+            setVoiceState("idle");
+            if (text.length > 0) {
+              setInputState({
+                cursorPosition: text.length,
+                value: text,
+              });
+              setNotice(`Transcribed. Press ENTER to send, or edit first.`);
+            } else {
+              setNotice("No speech detected. Try again with Ctrl+R.");
+            }
+          });
+        });
+      }
+      return;
+    }
+
+    if (voiceState === "recording" && key.return) {
+      setVoiceState("transcribing");
+      setNotice("Transcribing...");
+      void stopAndTranscribe().then((text) => {
+        setVoiceState("idle");
+        if (text.length > 0) {
+          setInputState({
+            cursorPosition: text.length,
+            value: text,
+          });
+          setNotice(`Transcribed. Press ENTER to send, or edit first.`);
+        } else {
+          setNotice("No speech detected. Try again with Ctrl+R.");
+        }
+      });
+      return;
+    }
+
+    if (voiceState === "recording" && inputValue === "") {
+      cancelRecording();
+      setVoiceState("idle");
+      setNotice(null);
+      return;
+    }
+
+    if (voiceState === "recording" || voiceState === "transcribing") {
       return;
     }
 
@@ -1434,8 +1520,25 @@ function ChatInput({
     if (option.id === "help") {
       resetInput();
       setNotice(
-        "Slash commands: /provider, /model, /init, /update, /clear, /help, /exit. Use arrows to select.",
+        "Slash commands: /provider, /model, /init, /update, /clear, /voice, /help, /exit. Use arrows to select.",
       );
+      return;
+    }
+
+    if (option.id === "voice") {
+      resetInput();
+      if (voiceEnabled) {
+        setNotice(
+          "Voice: ready. Ctrl+R to record, ENTER to transcribe. AESOP_TTS=0 to mute responses.",
+        );
+      } else {
+        const issues = voiceDiagnostics();
+        if (issues.length === 0) {
+          setNotice("Voice: not available (not a Termux environment).");
+        } else {
+          setError(`Voice setup incomplete: ${issues.join(" | ")}`);
+        }
+      }
       return;
     }
 
@@ -1569,12 +1672,19 @@ function ChatInput({
           )}
         </Text>
       </Box>
-      <Text>
-        <Text color="gray">
-          enter to send - / for commands - /exit to quit - cwd{" "}
-          {formatCwd(process.cwd())}
+      {voiceState === "recording" ? (
+        <Text color="red">Recording... press ENTER to stop</Text>
+      ) : voiceState === "transcribing" ? (
+        <Text color="yellow">Transcribing...</Text>
+      ) : (
+        <Text>
+          <Text color="gray">
+            enter to send - / for commands
+            {voiceEnabled ? " - ctrl+r voice - ctrl+s stop" : ""} - /exit to
+            quit - cwd {formatCwd(process.cwd())}
+          </Text>
         </Text>
-      </Text>
+      )}
       {menuState.kind !== "none" ? (
         <SlashMenu
           currentModelId={currentModelId}
@@ -1608,7 +1718,8 @@ type SlashCommandId =
   | "init"
   | "model"
   | "provider"
-  | "update";
+  | "update"
+  | "voice";
 
 type SlashCommandOption = {
   description: string;
@@ -1662,6 +1773,11 @@ const slashCommandOptions: SlashCommandOption[] = [
     description: "Exit OpenWiki",
     id: "exit",
     label: "/exit",
+  },
+  {
+    description: "Voice setup status and diagnostics",
+    id: "voice",
+    label: "/voice",
   },
 ];
 
