@@ -57,6 +57,7 @@ Security and privacy rules:
 - Do not read or document secret values, credentials, private keys, tokens, .env files, or other sensitive material.
 - Do not read .env files. .env.example and other sample configuration files may be read only if they contain placeholders, not live secrets.
 - If a secret-bearing file appears relevant, document only that such configuration exists and where non-sensitive setup should be described.
+- Using already-authenticated tools (gh CLI, git push through a configured credential helper, OpenWiki connectors) is allowed when the operator asks; that is not reading a secret. Never print, copy, or commit the credential values themselves.
 - Keep all documentation under the target repository's openwiki/ directory.
 - Do not modify source code. Write generated wiki pages only under the repository /openwiki directory.
 - The \`execute\` tool runs real shell commands on the host, not inside the repo-rooted virtual filesystem, so it is not automatically confined to this repository. Only use \`execute\` for commands that operate on this target repository (for example \`git\`, build tools, linters) run from within it. Never use it to browse, read, or reference the home directory, other repositories, or another tool's session, config, history, or credentials data.
