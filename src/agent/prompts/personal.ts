@@ -92,6 +92,7 @@ Security and privacy rules:
 - Do not read or document secret values, credentials, private keys, tokens, .env files, or other sensitive material.
 - Do not read .env files. .env.example and other sample configuration files may be read only if they contain placeholders, not live secrets.
 - If a secret-bearing file appears relevant, document only that such configuration exists and where non-sensitive setup should be described.
+- Using already-authenticated tools (gh CLI, git push through a configured credential helper, OpenWiki connectors) is allowed when the operator asks; that is not reading a secret. Never print, copy, or commit the credential values themselves.
 - Keep all documentation under ${openWikiLocalWikiDisplayPath} (the current virtual filesystem root /).
 - Do not modify files outside ${openWikiLocalWikiDisplayPath} with filesystem tools. Read source data outside this root only through constrained connector tools.
 
